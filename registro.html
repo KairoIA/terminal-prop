@@ -84,7 +84,13 @@
   .pg.on{background:var(--panel3);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line2)}
   .pg.on .n{color:var(--firm)}
   .tabbar{display:flex;align-items:flex-end;justify-content:space-between;gap:10px 16px;flex-wrap:wrap-reverse;border-bottom:1px solid var(--line)}
-  .tabbar .top-actions{padding-bottom:8px}
+  .tabbar .top-actions{padding-bottom:8px;align-items:center}
+  .sync{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--mut);padding:0 6px;white-space:nowrap}
+  .sync i{width:7px;height:7px;border-radius:50%;background:var(--mut2);flex:none}
+  .sync.ok i{background:var(--good)}
+  .sync.busy i{background:var(--brk);animation:pulso 1s ease-in-out infinite}
+  .sync.off i{background:var(--warn)}
+  @keyframes pulso{50%{opacity:.25}}
   .tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;max-width:100%}
   .tabs::-webkit-scrollbar{display:none}
   .tab{background:none;border:none;cursor:pointer;font-family:var(--disp);font-weight:600;font-size:14.5px;color:var(--mut);
@@ -403,6 +409,7 @@
         <button class="tab" data-v="comparar">Con vs sin coberturas</button>
       </nav>
       <div class="top-actions">
+        <span class="sync" id="sync"><i></i><span id="syncTxt">Conectando…</span></span>
         <button class="btn sm" data-act="data">Datos y copias</button>
         <button class="btn sm primary" data-act="new">+ Comprar cuentas</button>
       </div>
@@ -410,12 +417,8 @@
   </header>
 
   <div class="banner" id="demoBanner" hidden>
-    <span><b>Datos de ejemplo.</b> Así se ve con 28 cuentas inventadas. Cuando quieras, empieza con las tuyas.</span>
-    <button class="btn sm" data-act="cleardemo">Quitar ejemplo y empezar</button>
-  </div>
-  <div class="banner" id="bkBanner" hidden>
-    <span><b>Tus datos solo están en este navegador.</b> <span id="bkText"></span> Descarga una copia y guárdala en el Drive.</span>
-    <button class="btn sm" data-act="export">Descargar copia</button>
+    <span><b>Datos de ejemplo.</b> 28 cuentas inventadas, solo en este aparato: no tocan los datos compartidos.</span>
+    <button class="btn sm" data-act="cleardemo">Volver a los datos reales</button>
   </div>
 
   <main>
@@ -590,7 +593,7 @@
     </section>
   </main>
 
-  <footer>Terminal Prop · los datos se guardan solo en este navegador · no es asesoramiento financiero</footer>
+  <footer>Terminal Prop · los datos se comparten con quien tenga el enlace · no es asesoramiento financiero</footer>
 </div>
 
 <!-- cajón de cuenta -->
@@ -627,13 +630,13 @@
     <div><div class="eyebrow">Tus datos</div><h2>Copias y exportar</h2></div>
     <button type="button" class="x close" data-act="closedlg" aria-label="Cerrar">✕</button>
   </div>
-  <p class="help" style="margin-top:0">Todo lo que apuntas se guarda <b>solo en este navegador</b> de este dispositivo; nadie más lo ve. Si borras los datos del navegador o cambias de móvil, se pierde: descarga una copia de vez en cuando y guárdala en el Drive.</p>
+  <p class="help" style="margin-top:0">Lo que apuntas se guarda <b>en internet y lo ve igual cualquiera que abra este enlace</b>, desde el móvil o el ordenador. Cada aparato guarda además una copia, para que funcione sin conexión; al volver la conexión, se sincroniza solo.</p>
   <div class="dl-list">
-    <button class="dl-item" data-act="export"><b>Descargar copia</b><small>Un archivo con todo. Guárdalo en el Drive o mándatelo por correo.</small></button>
-    <label class="dl-item" for="impFile"><b>Cargar una copia</b><small>Para pasar tus datos a otro móvil u ordenador.</small></label>
+    <button class="dl-item" data-act="export"><b>Descargar copia</b><small>Un archivo con todo, por si acaso.</small></button>
+    <label class="dl-item" for="impFile"><b>Cargar una copia</b><small>Sustituye lo que hay por la copia, para todos los que usan el enlace.</small></label>
     <button class="dl-item" data-act="csv"><b>Exportar a Excel</b><small>Todos los movimientos en una tabla (.csv).</small></button>
-    <button class="dl-item" data-act="demo"><b>Ver con datos de ejemplo</b><small>Carga 28 cuentas inventadas para ver cómo funciona.</small></button>
-    <button class="dl-item danger" data-act="wipe"><b>Borrar todo</b><small>Empieza de cero. No se puede deshacer.</small></button>
+    <button class="dl-item" data-act="demo"><b>Ver con datos de ejemplo</b><small>28 cuentas inventadas, solo en este aparato. No tocan los datos compartidos.</small></button>
+    <button class="dl-item danger" data-act="wipe"><b>Borrar todo</b><small>Borra todas las cuentas para todos los que usan el enlace.</small></button>
   </div>
   <input type="file" id="impFile" class="vh" accept=".json,application/json">
 </dialog>
@@ -656,15 +659,106 @@
   var NF0=new Intl.NumberFormat('es-ES',{maximumFractionDigits:0});
 
   /* ================= datos ================= */
-  function blank(){return {v:1,seq:0,demo:false,lastBackup:null,accounts:[]};}
+  function blank(){return {v:1,seq:0,demo:false,lastBackup:null,accounts:[],deleted:{},rev:0,dirty:false};}
   function load(){
-    try{var r=localStorage.getItem(KEY); if(r){var d=JSON.parse(r); if(d&&Array.isArray(d.accounts)) return d;}}catch(e){}
+    try{
+      var r=localStorage.getItem(KEY);
+      if(r){
+        var d=JSON.parse(r);
+        if(d&&Array.isArray(d.accounts)){
+          d.deleted=d.deleted||{};
+          // lo apuntado antes de que existiera la sincronización se sube al abrir
+          if(d.rev===undefined){d.rev=0;d.dirty=d.accounts.length>0&&!d.demo;}
+          return d;
+        }
+      }
+    }catch(e){}
     return blank();
   }
   var S=load();
+  function persist(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+  var chg=0;
   function save(){
-    try{localStorage.setItem(KEY,JSON.stringify(S));}
-    catch(e){toast('Este navegador no deja guardar. Descarga una copia para no perder los datos.');}
+    chg++;
+    if(!S.demo)S.dirty=true;
+    persist();
+    if(!S.demo)schedulePush();
+  }
+  function touch(a){a.mt=Date.now();}
+
+  /* ================= sincronización (Worker + D1 en Cloudflare) =================
+     Un único documento compartido. Cada guardado lleva la revisión que conocíamos; si alguien
+     guardó antes, el servidor responde 409 con lo último, se juntan los cambios y se vuelve a guardar. */
+  var API='https://terminal-prop-datos.kairoia.workers.dev/registro';
+  var pushT=null,pushing=false,retries=0;
+  function setSync(st,txt){var el=$('sync');if(!el)return;el.className='sync '+st;$('syncTxt').textContent=txt;}
+  function shared(){return {v:1,seq:S.seq||0,accounts:S.accounts,deleted:S.deleted||{},lastFirm:S.lastFirm,lastSize:S.lastSize,lastCost:S.lastCost};}
+  function adopt(d,rev){
+    d=d||{};
+    S={v:1,seq:d.seq||0,accounts:d.accounts||[],deleted:d.deleted||{},lastFirm:d.lastFirm,lastSize:d.lastSize,lastCost:d.lastCost,
+       demo:false,rev:rev,dirty:false,lastBackup:S.lastBackup};
+  }
+  // junta lo del servidor con lo de este aparato: cuentas y movimientos por su identificador, sin perder nada
+  function merge(srv,loc){
+    srv=srv||{};
+    var del=Object.assign({},srv.deleted||{},loc.deleted||{}),map={},order=[],out=[];
+    function add(a,side){if(!map[a.id]){map[a.id]={};order.push(a.id);}map[a.id][side]=a;}
+    (srv.accounts||[]).forEach(function(a){add(a,'s');});
+    (loc.accounts||[]).forEach(function(a){add(a,'l');});
+    order.forEach(function(id){
+      if(del[id])return;
+      var s=map[id].s,l=map[id].l,a;
+      if(s&&l){
+        a=Object.assign({},(l.mt||0)>=(s.mt||0)?l:s);
+        var ev={};s.events.concat(l.events).forEach(function(e){ev[e.id]=e;});
+        a.events=Object.keys(ev).map(function(k){return ev[k];});
+      }else a=Object.assign({},s||l);
+      a.events=(a.events||[]).filter(function(e){return !del[e.id];});
+      out.push(a);
+    });
+    var seq=Math.max(srv.seq||0,loc.seq||0),seen={};
+    out.sort(function(x,y){return (x.t||0)-(y.t||0);}).forEach(function(a){
+      if(seen[a.n]){a.n=++seq;a.mt=Date.now();}
+      seen[a.n]=1;seq=Math.max(seq,a.n);
+    });
+    return {v:1,seq:seq,accounts:out,deleted:del,lastFirm:loc.lastFirm||srv.lastFirm,lastSize:loc.lastSize||srv.lastSize,lastCost:loc.lastCost!=null?loc.lastCost:srv.lastCost};
+  }
+  function schedulePush(){clearTimeout(pushT);setSync('busy','Guardando…');pushT=setTimeout(push,600);}
+  function push(){
+    if(S.demo||!S.dirty||pushing)return;
+    pushing=true;
+    var sent=chg;
+    fetch(API,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({rev:S.rev||0,data:shared()})})
+      .then(function(res){return res.json().then(function(j){return {res:res,j:j};});})
+      .then(function(x){
+        pushing=false;
+        if(x.res.status===409&&retries<5){
+          retries++;
+          var m=merge(x.j.data,S);adopt(m,x.j.rev);S.dirty=true;persist();renderAll(true);
+          return push();
+        }
+        if(!x.res.ok)throw new Error(x.j.error||x.res.status);
+        retries=0;S.rev=x.j.rev;
+        if(chg===sent)S.dirty=false;
+        persist();
+        if(S.dirty)schedulePush();else setSync('ok','Guardado');
+      })
+      .catch(function(){pushing=false;setSync('off','Sin conexión · se guardará');});
+  }
+  function pull(){
+    if(S.demo||pushing)return;
+    fetch(API,{cache:'no-store'})
+      .then(function(res){if(!res.ok)throw new Error(res.status);return res.json();})
+      .then(function(j){
+        if(S.demo||pushing)return;
+        if(S.dirty){
+          if(j.rev!==S.rev){var m=merge(j.data,S);adopt(m,j.rev);S.dirty=true;persist();renderAll(true);}
+          push();return;
+        }
+        if(j.rev!==S.rev){adopt(j.data,j.rev);persist();renderAll(true);}
+        setSync('ok','Al día');
+      })
+      .catch(function(){setSync('off',S.dirty?'Sin conexión · se guardará':'Sin conexión');});
   }
   var uc=0;
   function uid(){return Date.now().toString(36)+(uc++).toString(36)+Math.random().toString(36).slice(2,6);}
@@ -773,19 +867,22 @@
     else if(view==='fallos')renderFallos();
     else renderComparar();
   }
-  function renderAll(){
+  function renderAll(fromSync){
     var t=stats();
     $('cntAcc').textContent=t.n;
     $('cntFail').textContent=t.fails;
     renderBanners();
+    if(fromSync&&document.querySelector('dialog[open]'))return;
     renderView();
-    if(openId)renderDrawer();
+    if(openId){
+      // si llega algo de otro aparato mientras se escribe en la cuenta abierta, no se le borra lo que teclea
+      var ae=document.activeElement,typing=fromSync&&ae&&$('drawer').contains(ae)&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName);
+      if(!typing)renderDrawer();
+    }
   }
   function renderBanners(){
     $('demoBanner').hidden=!S.demo;
-    var need=!S.demo&&S.accounts.length>0&&(!S.lastBackup||daysSince(S.lastBackup)>=7);
-    $('bkBanner').hidden=!need;
-    if(need)$('bkText').textContent=S.lastBackup?'Tu última copia es del '+dfmt(S.lastBackup,true)+'.':'Aún no has hecho ninguna copia.';
+    if(S.demo)setSync('','Ejemplo · solo aquí');
   }
 
   /* ---------- panel ---------- */
@@ -1140,7 +1237,7 @@
     if(!isFinite(v)||v<0){el.classList.add('err');el.focus();toast('Pon el importe');return NaN;}
     return Math.abs(v);
   }
-  function done(msg,a){save();F=freshForm(a);renderAll();toast(msg);}
+  function done(msg,a){touch(a);save();F=freshForm(a);renderAll();toast(msg);}
   function addOp(a){
     var v=readAmt();if(!isFinite(v))return;
     var e={id:uid(),t:stamp(),k:'op',d:$('fD').value||today(),ph:$('fPh').value,firm:F.firm,brk:F.sign*v,fail:F.fail?{type:$('fType').value}:null,note:$('fNote').value.trim()};
@@ -1192,13 +1289,13 @@
     var c=parseNum($('nCost').value);
     if(!isFinite(c)||c<0){$('nCost').classList.add('err');$('nCost').focus();return;}
     if(S.demo){
-      if(!confirm('Ahora mismo ves los datos de ejemplo. ¿Los quito para empezar con tus cuentas?'))return;
+      if(!confirm('Ahora mismo ves el ejemplo. ¿Vuelvo a los datos reales y apunto ahí la compra?'))return;
       S=blank();
     }
     var q=Math.max(1,Math.min(200,parseInt($('nQty').value,10)||1));
     var firm=$('nFirm').value.trim(),size=$('nSize').value.trim(),d=$('nDate').value||today(),note=$('nNote').value.trim(),last=null;
     for(var i=0;i<q;i++){
-      last={id:uid(),n:++S.seq,firm:firm,size:size,date:d,cost:c,st:'eval',t:stamp(),events:[],note:note};
+      last={id:uid(),n:++S.seq,firm:firm,size:size,date:d,cost:c,st:'eval',t:stamp(),mt:Date.now(),events:[],note:note};
       S.accounts.push(last);
     }
     S.lastFirm=firm;S.lastSize=size;S.lastCost=c;
@@ -1216,7 +1313,7 @@
   function exportJson(){
     if(!S.accounts.length){toast('Aún no hay nada que copiar');return;}
     if(!S.demo)S.lastBackup=today();
-    save();
+    persist();
     download('terminal-prop-cobertura-'+today()+'.json',JSON.stringify(S,null,1),'application/json');
     renderBanners();toast('Copia descargada');
   }
@@ -1247,9 +1344,14 @@
       try{
         var d=JSON.parse(r.result);
         if(!d||!Array.isArray(d.accounts))throw new Error('formato');
-        if(S.accounts.length&&!S.demo&&!confirm('Esto cambia lo que hay ahora ('+plural(S.accounts.length,'cuenta')+') por la copia ('+plural(d.accounts.length,'cuenta')+'). ¿Seguir?'))return;
-        d.seq=d.seq||d.accounts.reduce(function(m,a){return Math.max(m,a.n||0);},0);
-        S=d;save();$('dlgData').close();renderAll();toast('Copia cargada: '+plural(d.accounts.length,'cuenta'));
+        if(S.accounts.length&&!S.demo&&!confirm('Esto cambia lo que hay ahora ('+plural(S.accounts.length,'cuenta')+') por la copia ('+plural(d.accounts.length,'cuenta')+') para todos los que usan el enlace. ¿Seguir?'))return;
+        var now=Date.now(),keep={},del=Object.assign({},S.demo?{}:S.deleted);
+        d.accounts.forEach(function(a){keep[a.id]=1;a.mt=now;delete del[a.id];});
+        if(!S.demo)S.accounts.forEach(function(a){if(!keep[a.id])del[a.id]=now;});
+        var rev=S.demo?0:S.rev;
+        adopt({seq:d.seq||d.accounts.reduce(function(m,a){return Math.max(m,a.n||0);},0),accounts:d.accounts,deleted:del,
+          lastFirm:d.lastFirm,lastSize:d.lastSize,lastCost:d.lastCost},rev);
+        save();$('dlgData').close();renderAll();toast('Copia cargada: '+plural(d.accounts.length,'cuenta'));
       }catch(e){toast('Ese archivo no es una copia de Terminal Prop');}
       finally{inp.value='';}
     };
@@ -1302,8 +1404,12 @@
     return st;
   }
   function loadDemo(){
-    if(S.accounts.length&&!S.demo&&!confirm('Tienes '+plural(S.accounts.length,'cuenta')+' apuntadas y el ejemplo las sustituye. Si no tienes copia, cancela y descárgala antes. ¿Cargar el ejemplo?'))return;
-    S=makeDemo();save();closeDlgs();renderAll();toast('Datos de ejemplo cargados');
+    if(S.dirty&&!S.demo){toast('Espera un momento: aún se está guardando lo último');push();return;}
+    var keep=S.lastBackup;
+    S=makeDemo();S.lastBackup=keep;persist();closeDlgs();closeDrawer();renderAll();toast('Ejemplo cargado solo en este aparato');
+  }
+  function leaveDemo(){
+    S=blank();persist();closeDrawer();renderAll();setSync('busy','Cargando…');pull();
   }
 
   /* ================= eventos ================= */
@@ -1321,7 +1427,8 @@
     if(el.dataset.del&&a){
       if(!confirm('¿Borrar este movimiento?'))return;
       a.events=a.events.filter(function(e){return e.id!==el.dataset.del;});
-      save();renderAll();toast('Movimiento borrado');return;
+      if(!S.demo)S.deleted[el.dataset.del]=Date.now();
+      touch(a);save();renderAll();toast('Movimiento borrado');return;
     }
     switch(el.dataset.act){
       case 'new':closeDlgs();openNew();break;
@@ -1329,30 +1436,36 @@
       case 'closedlg':closeDlgs();break;
       case 'close':closeDrawer();break;
       case 'demo':loadDemo();break;
-      case 'cleardemo':if(confirm('¿Quitar los datos de ejemplo y empezar de cero?')){S=blank();save();closeDrawer();renderAll();}break;
+      case 'cleardemo':leaveDemo();break;
       case 'export':exportJson();break;
       case 'csv':exportCsv();break;
       case 'wipe':
-        if(S.accounts.length&&confirm('¿Borrar TODAS las cuentas y movimientos de este navegador? No se puede deshacer.')){S=blank();save();closeDlgs();closeDrawer();renderAll();toast('Todo borrado');}
+        if(S.demo){leaveDemo();closeDlgs();break;}
+        if(S.accounts.length&&confirm('¿Borrar TODAS las cuentas para todos los que usan el enlace? (Claude puede recuperarlas del historial si fue sin querer.)')){
+          var now=Date.now();S.accounts.forEach(function(x){S.deleted[x.id]=now;});S.accounts=[];
+          save();closeDlgs();closeDrawer();renderAll();toast('Todo borrado');
+        }
         break;
       case 'addop':if(a)addOp(a);break;
       case 'addpay':if(a)addPay(a);break;
       case 'addfee':if(a)addFee(a);break;
-      case 'fund':if(a){a.st='funded';a.fundedAt=a.fundedAt||today();F.ph='funded';save();renderAll();toast('Cuenta '+num(a)+' fondeada');}break;
-      case 'burn':if(a){a.st=wasFunded(a)?'lost_funded':'lost_eval';a.endedAt=today();save();renderAll();toast('Cuenta '+num(a)+' quemada');}break;
-      case 'closeacc':if(a){a.st='closed';a.endedAt=today();save();renderAll();toast('Cuenta '+num(a)+' cerrada');}break;
-      case 'reopen':if(a){a.st=a.fundedAt?'funded':'eval';delete a.endedAt;save();renderAll();toast('Cuenta '+num(a)+' reabierta');}break;
+      case 'fund':if(a){a.st='funded';a.fundedAt=a.fundedAt||today();F.ph='funded';touch(a);save();renderAll();toast('Cuenta '+num(a)+' fondeada');}break;
+      case 'burn':if(a){a.st=wasFunded(a)?'lost_funded':'lost_eval';a.endedAt=today();touch(a);save();renderAll();toast('Cuenta '+num(a)+' quemada');}break;
+      case 'closeacc':if(a){a.st='closed';a.endedAt=today();touch(a);save();renderAll();toast('Cuenta '+num(a)+' cerrada');}break;
+      case 'reopen':if(a){a.st=a.fundedAt?'funded':'eval';delete a.endedAt;touch(a);save();renderAll();toast('Cuenta '+num(a)+' reabierta');}break;
       case 'saveacc':
         if(a){
           var c=parseNum($('eCost').value);
           if(!isFinite(c)||c<0){$('eCost').classList.add('err');return;}
           a.firm=$('eFirm').value.trim();a.size=$('eSize').value.trim();a.cost=c;a.date=$('eDate').value||a.date;a.note=$('eNote').value.trim();
-          save();renderAll();toast('Cambios guardados');
+          touch(a);save();renderAll();toast('Cambios guardados');
         }
         break;
       case 'delacc':
         if(a&&confirm('¿Borrar la cuenta '+num(a)+' y todo lo apuntado en ella?')){
-          S.accounts=S.accounts.filter(function(x){return x.id!==a.id;});save();closeDrawer();renderAll();toast('Cuenta borrada');
+          S.accounts=S.accounts.filter(function(x){return x.id!==a.id;});
+          if(!S.demo)S.deleted[a.id]=Date.now();
+          save();closeDrawer();renderAll();toast('Cuenta borrada');
         }
         break;
     }
@@ -1387,9 +1500,15 @@
   var rz;
   window.addEventListener('resize',function(){clearTimeout(rz);rz=setTimeout(function(){if(view==='panel'&&S.accounts.length)renderPanel();},150);});
 
+  // traer lo último al abrir, cada 15 s con la pestaña visible, al volver a ella y al recuperar la conexión
+  window.addEventListener('online',function(){if(S.dirty)push();else pull();});
+  document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')pull();});
+  setInterval(function(){if(document.visibilityState==='visible'){if(S.dirty)push();else pull();}},15000);
+
   F=freshForm(null);
   setView(view);
   renderAll();
+  if(!S.demo){setSync('busy','Conectando…');pull();}
 })();
 </script>
 </body>
